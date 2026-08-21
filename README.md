@@ -3,6 +3,7 @@
 An interactive Mapbox GL JS map visualizing hourly near-surface wildfire smoke
 concentration over the New York City area, built from NOAA's HRRR-Smoke
 forecast model.
+[![Hourly smoke map demo](hourly-smoke-map-demo.gif)]
 
 ## Overview
 
