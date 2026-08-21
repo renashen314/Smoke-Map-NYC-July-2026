@@ -1,0 +1,8 @@
+.claude/
+.vscode/
+AQI-map/
+draft/
+hrrr_smoke_raw/
+.cache.sqlite
+hrrr.20260713.t00z.f00.smoke.grib2
+config.js

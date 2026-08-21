@@ -1,0 +1,258 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>NYC Hourly Smoke Map</title>
+  <link href="https://api.mapbox.com/mapbox-gl-js/v3.4.0/mapbox-gl.css" rel="stylesheet" />
+</head>
+<style>
+  body { 
+    margin: 0; 
+    font-family: Arial, Helvetica, sans-serif;
+  }
+  #map { 
+  position: absolute; 
+  top: 0;
+  bottom: 0; 
+  width: 100%; 
+  }
+  #info-panel {
+    position: absolute; 
+    top: 10px; 
+    left: 10px; 
+    right: 0; 
+    bottom: 0; 
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+    pointer-events: none;
+  }
+  #map-title {
+    max-width: 500px;
+    background: white; 
+    padding: 10px 14px; 
+    border-radius: 6px;
+    box-shadow: 0 1px 4px rgba(0,0,0,0.3);
+    z-index: 1;
+  }
+  #map-title h1 {
+    margin: 0 0 4px;
+    font-size: 16px;
+    font-weight: 700;
+  }
+  #map-title p {
+    margin: 0; 
+    font-size: 14px; 
+    color: #444; 
+    line-height: 1.5;
+  }
+  #legend {
+    max-width: 160px;
+    background: white; 
+    padding: 16px 14px; 
+    border-radius: 6px;
+    box-shadow: 0 1px 4px rgba(0,0,0,0.3); 
+    font-size: 14px; 
+  }
+  #legend h4 { 
+    margin: 0 0 6px; 
+    font-size: 14px; 
+  }
+  .legend-row { 
+    display: flex; 
+    align-items: center; 
+    margin: 2px 0; 
+  }
+  .swatch { 
+    width: 16px; 
+    height: 16px; 
+    margin-right: 6px; 
+    border: 1px solid #999; 
+  }
+  #controls {
+    position: absolute;
+    bottom: 40px;
+    left: 50%;
+    transform: translateX(-50%);
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    min-width: 460px;
+    white-space: nowrap;
+  }
+  .panel {
+    max-width: 600px;
+    background: rgba(255, 255, 255, 0.93);
+    border-radius: 8px;
+    padding: 12px 16px;
+    box-shadow: 0 2px 10px rgba(0, 0, 0, 0.18);
+    backdrop-filter: blur(6px);
+  }
+  #play-btn {
+    flex-shrink: 0;
+    min-width: 100px;
+    min-height: 38px;
+    margin: auto 0;
+    padding: 8px 16px;
+    border: none;
+    border-radius: 5px;
+    background: #2563eb;
+    color: #fff;
+    font-size: 14px;
+    font-weight: 600;
+    cursor: pointer;
+  }
+  #play-btn:hover { background: #1d4ed8; }
+  #play-btn:disabled { background: #94a3b8; cursor: default; }
+  #time-label { 
+    flex-shrink: 0; 
+    font-size: 16px;
+    font-weight: 600; 
+    color: #334155; 
+    min-width: 200px; 
+    text-align: center; 
+  }
+  #time-slider { 
+    flex: 1; 
+    min-width: 220px; 
+    cursor: pointer; 
+    accent-color: #2563eb; 
+  }
+
+</style>
+<body>
+  
+</body>
+<div id="map"></div>
+
+<div id="info-panel">
+  <div id="map-title">
+    <h1>NYC Hourly Surface Smoke (Jul 13-23, 2026)</h1>
+    <p>This map shows near-surface wildfire smoke concentration over the New York City area during wildfires in Canada.
+    Modeled hourly from National Oceanic and Atmospheric Administration(NOAA)'s HRRR-Smoke archives.</p>
+    <hr />
+    <p>
+    Data: <a href="https://nomads.ncep.noaa.gov/" target="_blank" rel="noopener">NOAA HRRR - Smoke</a>
+    <br />
+    via <a href="https://registry.opendata.aws/noaa-hrrr-pds/" target="_blank" rel="noopener">AWS - Amazon Web Services - HRRR archive</a>
+  </p>
+  </div>
+  <div id="legend">
+    <h4>Surface Smoke (µg/m³)</h4>
+    <div class="legend-row"><div class="swatch" style="background:#ffeda0"></div>Low (9-35)</div>
+    <div class="legend-row"><div class="swatch" style="background:#fd8d3c"></div>Medium (35-125)</div>
+    <div class="legend-row"><div class="swatch" style="background:#bd0026"></div>High (125+)</div>
+  </div>
+</div>
+<div class="panel" id="controls">
+    <button id="play-btn">▶ Play</button>
+    <div id="time-label">Loading…</div>
+    <input id="time-slider" type="range" min="0" max="0" value="0" step="1" />
+  </div>
+
+
+<script src="https://api.mapbox.com/mapbox-gl-js/v3.4.0/mapbox-gl.js"></script>
+<script src="config.js"></script>
+<script>
+  'use strict';
+  const MAPBOX_TOKEN = window.MAPBOX_TOKEN;
+  
+  mapboxgl.accessToken = MAPBOX_TOKEN;
+  
+  const map = new mapboxgl.Map({
+  container: 'map',
+  style: 'mapbox://styles/mapbox/light-v11',
+  center: [-73.97, 40.71],
+  zoom: 11,
+});
+
+let hourTimes = {};
+
+map.on('load', async () => {
+  // ── GeoJSON source (populated once the CSV loads) ──
+  map.addSource('smoke_level', {
+    type: 'geojson',
+    data: 'nyc_smoke_all_hours_levels.geojson',
+  });
+
+  map.addLayer({
+    id: 'smoke-layer',
+    type: 'fill',
+    source: 'smoke_level',
+    paint: {
+      'fill-color': [
+      'match', ['get', 'smoke_level'],
+      'clear', 'rgba(0,0,0,0)',
+      'low', '#ffeda0',
+      'medium', '#fd8d3c',
+      'high', '#bd0026',
+      /* default */ '#cccccc'
+      ],
+      'fill-opacity': 0.4,
+    },
+    filter: ['==', ['get', 'hour_index'], 0],
+  });
+})
+
+// Build the hour -> time lookup from the loaded source data
+fetch('nyc_smoke_all_hours_levels.geojson')
+  .then(r => r.json())
+  .then(data => {
+    let maxHour = 0;
+    for (const f of data.features) {
+      const { hour_index, time } = f.properties;
+      hourTimes[hour_index] = time;
+      if (hour_index > maxHour) maxHour = hour_index;
+    }
+
+    const slider = document.getElementById('time-slider');
+    slider.max = maxHour;
+    updateHour(0);
+
+    slider.addEventListener('input', (e) => {
+      updateHour(parseInt(e.target.value, 10));
+    });
+});
+
+function updateHour(hourIndex) {
+  map.setFilter('smoke-layer', ['==', ['get', 'hour_index'], hourIndex]);
+  const label = hourTimes[hourIndex] || `hour ${hourIndex}`;
+  document.getElementById('time-label').textContent = label.replace('T', ' at ') + ' EST';
+}
+
+const PLAY_INTERVAL_MS = 200;
+let playTimer  = null;
+
+const slider        = document.getElementById('time-slider');
+const timeLabel     = document.getElementById('time-label');
+const playBtn       = document.getElementById('play-btn');
+
+function startPlay() {
+  playBtn.textContent = '⏸ Pause';
+  playTimer = setInterval(() => {
+    let next = parseInt(slider.value, 10) + 1;
+    if (next > parseInt(slider.max, 10)) {
+      next = 0;
+    }
+    slider.value = next;
+    updateHour(next);
+  }, PLAY_INTERVAL_MS);
+}
+
+function stopPlay() {
+  clearInterval(playTimer);
+  playTimer = null;
+  playBtn.textContent = '▶ Play';
+}
+
+playBtn.addEventListener('click', () => {
+  playTimer ? stopPlay() : startPlay();
+});
+
+slider.addEventListener('input', (e) => {
+  if (playTimer) stopPlay();
+  updateHour(parseInt(e.target.value, 10));
+});
+</script>
+</html>
